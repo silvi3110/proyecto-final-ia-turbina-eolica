@@ -224,3 +224,6 @@ __marimo__/
 
 # Dataset local de entrenamiento
 /ciencia-datos/datos/*.csv
+
+# Base de datos local de la API
+/database/eolica.sqlite3
