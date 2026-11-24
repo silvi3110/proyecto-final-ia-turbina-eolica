@@ -221,3 +221,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Dataset local de entrenamiento
+/ciencia-datos/datos/*.csv
