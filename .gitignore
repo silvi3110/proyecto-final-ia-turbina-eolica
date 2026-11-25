@@ -221,3 +221,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Dataset local de entrenamiento
+/ciencia-datos/datos/*.csv
+
+# Base de datos local de la API
+/database/eolica.sqlite3
+
+/database/cargas/
+/database/modelo_activo.joblib
+/database/modelo_activo.joblib.tmp
