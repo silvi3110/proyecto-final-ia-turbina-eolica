@@ -5,12 +5,14 @@ CREATE TABLE IF NOT EXISTS predicciones (
         CHECK (direccion_grados >= 0 AND direccion_grados < 360),
     potencia_kw REAL NOT NULL,
     version_modelo TEXT NOT NULL,
-    fecha_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    fecha_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    clave_idempotencia TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cargas_entrenamiento (
     id_carga TEXT PRIMARY KEY NOT NULL,
-    fecha_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    fecha_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    clave_idempotencia TEXT
 );
 
 CREATE TABLE IF NOT EXISTS observaciones_entrenamiento (
@@ -29,5 +31,7 @@ CREATE TABLE IF NOT EXISTS operaciones_idempotentes (
     respuesta_json TEXT,
     estado TEXT NOT NULL CHECK (estado IN ('procesando', 'completada')),
     fecha_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reserva_epoch REAL NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (alcance, clave)
 );
+
