@@ -22,3 +22,12 @@ CREATE TABLE IF NOT EXISTS observaciones_entrenamiento (
     potencia_real_kw REAL NOT NULL,
     PRIMARY KEY (id_carga, fecha_medicion)
 );
+
+CREATE TABLE IF NOT EXISTS operaciones_idempotentes (
+    alcance TEXT NOT NULL,
+    clave TEXT NOT NULL,
+    respuesta_json TEXT,
+    estado TEXT NOT NULL CHECK (estado IN ('procesando', 'completada')),
+    fecha_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (alcance, clave)
+);
