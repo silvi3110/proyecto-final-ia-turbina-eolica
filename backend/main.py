@@ -18,7 +18,7 @@ raiz = Path(__file__).resolve().parents[1]
 ruta_modelo = raiz / "ciencia-datos" / "artefactos" / "modelo_turbina.joblib"
 ruta_bd = raiz / "database" / "eolica.sqlite3"
 ruta_schema = raiz / "database" / "schema.sql"
-carpeta_cargas = raiz / "database" / "cargas"
+carpeta_cargas_anteriores = raiz / "database" / "cargas"
 ruta_modelo_activo = raiz / "database" / "modelo_activo.joblib"
 
 columna_fecha = "Date/Time"
@@ -153,7 +153,7 @@ def consultar_historial():
     "/training-data",
     response_model=ArchivoEntrenamientoCargado,
     status_code=201,
-    summary="Cargar y validar un CSV de entrenamiento",
+    summary="Validar un CSV y guardar sus observaciones en la base",
 )
 def cargar_datos_entrenamiento(archivo: UploadFile = File(...)):
     if not (archivo.filename or "").lower().endswith(".csv"):
@@ -213,33 +213,83 @@ def cargar_datos_entrenamiento(archivo: UploadFile = File(...)):
             detail="Revisa los valores numéricos y los rangos de velocidad y dirección.",
         )
 
-    datos = datos.sort_values(columna_fecha)
     id_carga = uuid4()
-    carpeta_cargas.mkdir(parents=True, exist_ok=True)
-    datos.to_csv(
-        carpeta_cargas / f"{id_carga.hex}.csv",
-        index=False,
-        date_format=formato_fecha,
-    )
+    filas = [
+        (
+            id_carga.hex,
+            fecha.isoformat(timespec="minutes"),
+            float(velocidad),
+            float(direccion),
+            float(potencia),
+        )
+        for fecha, velocidad, direccion, potencia in datos.itertuples(
+            index=False, name=None
+        )
+    ]
 
-    return {"id_carga": id_carga, "filas": len(datos)}
+    with closing(sqlite3.connect(ruta_bd)) as conexion:
+        conexion.execute("PRAGMA foreign_keys = ON")
+        with conexion:
+            conexion.execute(
+                "INSERT INTO cargas_entrenamiento (id_carga) VALUES (?)",
+                (id_carga.hex,),
+            )
+            conexion.executemany(
+                """
+                INSERT INTO observaciones_entrenamiento (
+                    id_carga, fecha_medicion, velocidad_ms,
+                    direccion_grados, potencia_real_kw
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                filas,
+            )
+
+    return {"id_carga": id_carga, "filas": len(filas)}
+
+
+def leer_datos_entrenamiento(id_carga: UUID) -> pd.DataFrame:
+    with closing(sqlite3.connect(ruta_bd)) as conexion:
+        filas = conexion.execute(
+            """
+            SELECT fecha_medicion, velocidad_ms, direccion_grados, potencia_real_kw
+            FROM observaciones_entrenamiento
+            WHERE id_carga = ?
+            ORDER BY fecha_medicion
+            """,
+            (id_carga.hex,),
+        ).fetchall()
+
+    if filas:
+        datos = pd.DataFrame(filas, columns=columnas_entrenamiento)
+        datos[columna_fecha] = pd.to_datetime(
+            datos[columna_fecha], format="%Y-%m-%dT%H:%M"
+        ).dt.strftime(formato_fecha)
+        return datos
+
+    # Compatibilidad con cargas validadas antes de guardarlas en SQLite.
+    ruta_csv = carpeta_cargas_anteriores / f"{id_carga.hex}.csv"
+    if ruta_csv.is_file():
+        return pd.read_csv(ruta_csv)
+
+    raise HTTPException(
+        status_code=404,
+        detail="No existe esa carga de entrenamiento.",
+    )
 
 
 @app.post(
     "/retrain",
     response_model=ResultadoReentrenamiento,
-    summary="Reentrenar el modelo con un CSV cargado",
+    summary="Reentrenar el modelo con las observaciones de una carga",
 )
 def reentrenar(solicitud: SolicitudReentrenamiento):
     global artefacto_activo
 
-    ruta_csv = carpeta_cargas / f"{solicitud.id_carga.hex}.csv"
-    if not ruta_csv.is_file():
-        raise HTTPException(status_code=404, detail="No existe esa carga de entrenamiento.")
+    datos = leer_datos_entrenamiento(solicitud.id_carga)
 
     with bloqueo_entrenamiento:
-        # La ruta de carga ya ordenó el CSV de menor a mayor fecha.
-        datos = pd.read_csv(ruta_csv)
+        # Las observaciones se reciben en orden cronológico.
         corte = int(len(datos) * 0.8)
         entrenamiento = datos.iloc[:corte]
         prueba = datos.iloc[corte:]
